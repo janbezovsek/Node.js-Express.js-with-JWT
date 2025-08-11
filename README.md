@@ -52,5 +52,8 @@ JWT_SECRET = your_secret
 
 ![Alt text](src/images/JWT3.jpg)
 
+---
+
+![Alt text](src/images/JWT4.jpg)
 
 
