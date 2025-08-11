@@ -1,6 +1,6 @@
 const mongoose = require('mongoose')
 const validator = require("validator")
-const bcryptjs = require("bcryptjs")
+const bcrypt = require("bcryptjs")
 
 
 const userSchema = new mongoose.Schema({
@@ -20,45 +20,25 @@ const userSchema = new mongoose.Schema({
     password: {
         type: String,
         required: [true, "Please enter your password"],
-        minLength: 8,
-        select: false
-    },
-    confirmPassword: {
-        type: String,
-        required: [true, "Please enter your confirm password"],
-        minLength: 8,
-        validate: {
-            validator: function(item) {
-                return item === this.password
-            },
-            message: "Passwords are not matching"
-        }
+        minLength: 8
     },
     passwordChangedAt: Date
 })
 
-// Query middleware for hashing the password
-userSchema.pre("save", async function (next) {
-    if(!this.isModified("password")) return next()
-    
-    // Hash the password
-    this.password = await bcryptjs.hash(this.password, 12)
-
-    // Unset confirmPassword
-    this.confirmPassword = undefined
-
-    next();
-})
-
-userSchema.pre("save", function(next) {
-    this.passwordChangedAt = Date.now() - 1;
-
-    next();
-})
-
-userSchema.methods.passwordCheck = async function (userEnteredPassword, password) {
-    return await bcryptjs.compare(userEnteredPassword, password)
+userSchema.methods.matchPassword = async function(enteredPassword) {
+//comparing passwords from database and what user typed in
+    return await bcrypt.compare(enteredPassword, this.password)
 }
+
+userSchema.pre('save', async function(next) {
+    if(!this.isModified) {
+        next()
+    }
+    //encrypting password
+    const salt = await bcrypt.genSalt(10)
+    this.password = await bcrypt.hash(this.password, salt)
+})
+
 userSchema.methods.tokenAvailabilityCheck = async function(jwtTimestamp){
     if(this.passwordChangedAt){
         const passwordChangedAtTimestamp = parseInt(this.passwordChangedAt.getTime() /1000, 10)

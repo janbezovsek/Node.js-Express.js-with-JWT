@@ -1,12 +1,13 @@
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { body, validationResult } = require('express-validator');
-const User = require('../models/user');
-const winston = require('winston');
+const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken')
+const asyncHandler = require('express-async-handler')
+const { body, validationResult } = require('express-validator')
+const User = require('../models/userModel')
+const winston = require('winston')
 
 // Logger setup
 const logger = winston.createLogger({
-  level: 'error',
+  level: 'info',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.json()
@@ -15,121 +16,91 @@ const logger = winston.createLogger({
     new winston.transports.File({ filename: 'error.log' }),
     new winston.transports.Console(),
   ],
-});
+})
 
-// Validation rules
-const validateRegister = [
-  body('username').isLength({ min: 3 }).trim().withMessage('Username must be at least 3 characters'),
-  body('email').isEmail(),
-  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
-  body('confirmPassword').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
-];
+//token generate
+const generateToken = (id) => {
+    return jwt.sign({id},process.env.JWT_SECRET, {
+        expiresIn: "30d",
+    })
+}
 
-const validateLogin = [
-  body('username').notEmpty().withMessage('Username is required'),
-  body('password').notEmpty().withMessage('Password is required'),
-];
+//controller for register 
+const registerUser = asyncHandler(async (req,res)=>{
 
-// Register controller
-const register = [
-  validateRegister,
-  async (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      const error = new Error('Validation failed');
-      error.status = 400;
-      error.details = errors.array();
-      return next(error);
-    }
+//destructuring this variables from User model
+const { username, email, password, confirmPassword } = req.body
 
-    const { username, password } = req.body;
 
-    try {
-      const existingUser = await User.findOne({ username });
-      if (existingUser) {
-        const error = new Error('Username already exists');
-        error.status = 400;
-        return next(error);
-      }
+if(!username || !email || !password || !confirmPassword) {
+  res.status(400)
+  throw new Error("Please enter all of the fields")
+}
 
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const user = new User({ username, password: hashedPassword });
-      await user.save();
+const errors = validationResult(req);
 
-      res.status(201).json({ message: 'User registered successfully' });
-    } catch (error) {
-      logger.error('Registration error', { error: error.message, username });
-      next(error);
-    }
-  },
-];
+if (!errors.isEmpty()) {
+  return res.status(400).json({ errors: errors.array() });
+}
 
-// Login controller (JWT generation)
-const login = [
-  validateLogin,
-  async (req, res, next) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      const error = new Error('Validation failed');
-      error.status = 400;
-      error.details = errors.array();
-      return next(error);
-    }
+//email must be unique
+const userExists = await User.findOne({email})
 
-    const { username, password } = req.body;
+if(userExists) {
+  res.status(400)
+  throw new Error("User already exists")
+}
 
-    try {
-      const user = await User.findOne({ username });
-      if (!user) {
-        const error = new Error('Invalid credentials');
-        error.status = 400;
-        return next(error);
-      }
+//if user doesnt exist we create a new user
+const user = await User.create({
+      username,
+      email,
+      password,
+})
 
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        const error = new Error('Invalid credentials');
-        error.status = 400;
-        return next(error);
-      }
+if(user){
+    res.status(201).json({
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+     // token: generateToken(user._id),
+})
+} else {
+res.status(400)
+throw new Error("Failed to create the user")
+}
+})
 
-      const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, {
-        expiresIn: '1h',
-      });
+//controller for login
+const authUser = asyncHandler(async (req,res) => {
 
-      res.json({ token });
-    } catch (error) {
-      logger.error('Login error', { error: error.message, username });
-      next(error);
-    }
-  },
-];
+const { email, password } = req.body
 
-// Protected route controller (JWT verification)
-const protect = (req, res) => {
-  res.json({ message: 'This is a protected route', user: req.user });
-};
+const errors = validationResult(req);
 
-// Middleware for JWT verification
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+if (!errors.isEmpty()) {
+  return res.status(400).json({ errors: errors.array() });
+}
 
-  if (!token) {
-    const error = new Error('Access token required');
-    error.status = 401;
-    return next(error);
-  }
+if(!email || !password ) {
+  res.status(400)
+  throw new Error("Please enter all of the fields")
+}
 
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      const error = new Error('Invalid or expired token');
-      error.status = 403;
-      return next(error);
-    }
-    req.user = user;
-    next();
-  });
-};
+const user = await User.findOne({email})
 
-module.exports = { register, login, protect, authenticateToken }
+//user must exist and password must match
+if(user.password && (await user.matchPassword(password))) {
+  res.json({
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+      token: generateToken(user._id),
+      })
+} else {
+  res.status(401)
+    throw new Error("Invalid email or password")
+}
+})
+
+module.exports={registerUser, authUser}
