@@ -38,6 +38,11 @@ DB_URL = mongodb+srv://plenty:@cluster0.z3yuu.mongodb.net/?retryWrites=true&w=ma
 
 JWT_SECRET = your_secret
 
+---
+DockerHub - https://hub.docker.com/repository/docker/bezovsekjan/jwt-auth/general
+
+---
+
 
 ### Postman
 
